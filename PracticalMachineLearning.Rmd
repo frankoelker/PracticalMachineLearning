@@ -1,0 +1,122 @@
+---
+title: "Practical Machine Learning"
+author: "Frank Oelker"
+date: "15 6 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+```
+
+## Background 
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.  
+
+More information is available from the website here: <http://groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset). 
+
+## Task
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases. 
+
+## Downloading and reading the data
+```{r download}
+trainingData <- "pml-training.csv"
+if(!file.exists(trainingData)) {
+  download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+                destfile = trainingData, method = "curl")
+} 
+testData <- "pml-testing.cvs"
+if(!file.exists(testData)) {
+  download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+                destfile = testData, method = "curl")
+}
+training <- read.csv(trainingData)
+test <- read.csv(testData)
+``` 
+
+## Tidy the data
+
+The training data contains `r dim(training)[1]` observations of `r dim(training)[2]` variables.
+The test data contains `r dim(test)[1]` observations of `r dim(test)[2]` variables.
+
+The first seven columns of the data sets contains useless informations to predict the manner in which the persons did the exercise.
+These columns and the columns with at least 95% NAs are removed.
+
+```{r tidy}
+index <- which(colSums(is.na(training)|training=="")>0.95*dim(training)[1])
+training <- training[,-index]
+training <- training[,-c(1:7)]
+index <- which(colSums(is.na(test)|test=="")>0.95*dim(test)[1])
+test <- test[,-index]
+test <- test[,-c(1:7)]
+
+```
+This allows to reduce the number of variables (columns) to `r dim(training)[2]`.
+
+The difference between the two data sets (training data and test data) is the column 53. In the test data set this column contains a poblem_id and in the training data set the "classe", which we are going to predict.
+
+## Create a training and a test set
+
+The original training record is divided into a training data set (70%) and a test data (30%) set. 
+
+```{r create test and training data}
+inTrain <- createDataPartition(training$classe, p = 0.7, list = FALSE)
+myTraining <- training[inTrain,]
+myTest <- training[-inTrain,]
+```
+
+
+## Building predictive models
+
+We will test 4 different models and compare the accuracy to decide which model applies:
+- random forest
+- gradient boosting
+- linear discriminant analysis
+- CART
+
+```{r predictive model}
+trainControl <- trainControl(method = "cv", number=5)
+set.seed(20000)
+modelRf <- train(classe ~ ., data = myTraining, method = "rf", trControl = trainControl, verbose = FALSE, ntree = 200)
+modelRf
+modelGbm <- train(classe ~ ., data = myTraining, method = "gbm", trControl = trainControl, verbose=FALSE)
+modelGbm
+modelLda <- train(classe ~ ., data = myTraining, method = "lda", trControl = trainControl)
+modelLda
+modelCart <- train(classe ~ ., data = myTraining, method = "rpart", trControl = trainControl)
+modelCart
+``` 
+
+The model with the highest accuracy is the Random Forest (99%). 
+
+## Cross validation on the test set
+
+We perfom a cross validation on the test set to check the assumption that the random forest model is the best solution.
+
+```{r cross validation}
+predictRf <- predict(modelRf, myTest)
+predictGbm <- predict(modelGbm, myTest)
+predictLda <- predict(modelLda, myTest)
+predictCart <- predict(modelCart, myTest)
+```
+
+Accuracies for the different models: 
+
+- random forest `r confusionMatrix(as.factor(myTest$classe), predictRf)$overall[1]` 
+ 
+- gradient boosting `r confusionMatrix(as.factor(myTest$classe), predictGbm)$overall[1]` 
+
+- linear discriminant analysis `r confusionMatrix(as.factor(myTest$classe), predictLda)$overall[1]` 
+
+- CART `r confusionMatrix(as.factor(myTest$classe), predictCart)$overall[1]`
+ 
+## Predicting for the original Test data set
+
+The model is applied on the original test data set, the expected out of sample error is
+`r 100 - as.numeric(confusionMatrix(as.factor(myTest$classe), predictRf)$overall[1]) * 100` %: 
+
+```{r apply on the original test data set}
+predict(modelRf, test)
+```
